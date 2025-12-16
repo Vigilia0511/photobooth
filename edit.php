@@ -450,7 +450,7 @@
     </style>
 </head>
 <body>
-    <div class="thanksgiving-text">HAPPY THANKSGIVING BRETHREN</div>
+    <div class="thanksgiving-text">HAPPY THANKSGIVING BRETHREN!!!</div>
     <div class="container">
         <div class="header">
             <button class="back-btn" onclick="goBack()">← Back</button>
