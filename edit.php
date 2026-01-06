@@ -268,6 +268,37 @@
             margin: 20px auto;
         }
 
+        .progress-container {
+            margin: 20px auto;
+            width: 80%;
+            text-align: center;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border: 2px solid #ccc;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.2);
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            width: 0%;
+            transition: width 0.3s ease;
+            border-radius: 8px;
+        }
+
+        .progress-text {
+            font-size: 16px;
+            color: #333;
+            font-weight: 600;
+        }
+
         @keyframes spin {
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
@@ -591,6 +622,12 @@
             <div class="modal-subtitle" id="uploadMessage">Please wait while we send your photobooth image for your hardcopy.</div>
         </div>
         <div class="upload-spinner" id="uploadSpinner"></div>
+        <div class="progress-container" id="progressContainer" style="display: none;">
+            <div class="progress-bar">
+                <div class="progress-fill" id="progressFill"></div>
+            </div>
+            <div class="progress-text" id="progressText">0%</div>
+        </div>
         <button class="close-btn" id="uploadCloseBtn" onclick="closeUploadModal()" style="display: none;">Close</button>
         <button class="cancel-btn" id="uploadCancelBtn" onclick="cancelUpload()" style="display: block;">Cancel</button>
     </div>
@@ -816,14 +853,17 @@
             btn.innerHTML = '⤴ Uploading...';
             btn.disabled = true;
 
-            uploadController = new AbortController();
+            // uploadController will be set in sendEmail
 
             // Show loading modal
             document.getElementById('uploadModal').classList.add('active');
             document.getElementById('uploadBackdrop').classList.add('active');
             document.getElementById('uploadTitle').textContent = 'Sending Image.....';
             document.getElementById('uploadMessage').textContent = 'Please wait while we send your photobooth image for your hardcopy.';
-            document.getElementById('uploadSpinner').style.display = 'block';
+            document.getElementById('uploadSpinner').style.display = 'none';
+            document.getElementById('progressContainer').style.display = 'block';
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = 'Preparing...';
             document.getElementById('uploadCloseBtn').style.display = 'none';
             document.getElementById('uploadCancelBtn').style.display = 'block';
 
@@ -917,38 +957,79 @@
                 const formData = new FormData();
                 canvas.toBlob(function(blob) {
                     formData.append('image', blob, 'photobooth_strip.png');
-                    fetch('send_email.php', {
-                        method: 'POST',
-                        body: formData,
-                        signal: uploadController.signal
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
+                    
+                    // Hide spinner and show progress bar
+                    document.getElementById('uploadSpinner').style.display = 'none';
+                    document.getElementById('progressContainer').style.display = 'block';
+                    document.getElementById('progressFill').style.width = '0%';
+                    document.getElementById('progressText').textContent = '0%';
+                    
+                    const xhr = new XMLHttpRequest();
+                    let uploadSuccess;
+                    
+                    function showResult() {
+                        if (uploadSuccess) {
                             document.getElementById('uploadTitle').textContent = 'Success!';
                             document.getElementById('uploadMessage').textContent = 'Your photobooth image has been sent via email.';
-                            document.getElementById('uploadSpinner').style.display = 'none';
+                            document.getElementById('progressContainer').style.display = 'none';
                             document.getElementById('uploadCloseBtn').style.display = 'block';
                             document.getElementById('uploadCancelBtn').style.display = 'none';
                         } else {
                             document.getElementById('uploadTitle').textContent = 'Error';
-                            document.getElementById('uploadMessage').textContent = 'Failed to send email: ' + data.error;
-                            document.getElementById('uploadSpinner').style.display = 'none';
+                            document.getElementById('uploadMessage').textContent = 'Failed to send email.';
+                            document.getElementById('progressContainer').style.display = 'none';
                             document.getElementById('uploadCloseBtn').style.display = 'block';
                             document.getElementById('uploadCancelBtn').style.display = 'none';
                         }
                         btn.innerHTML = '⤴ Upload';
                         btn.disabled = false;
-                    })
-                    .catch(error => {
-                        document.getElementById('uploadTitle').textContent = 'Error';
-                        document.getElementById('uploadMessage').textContent = 'Error: ' + error;
-                        document.getElementById('uploadSpinner').style.display = 'none';
+                    }
+                    
+                    xhr.upload.addEventListener('progress', function(e) {
+                        if (e.lengthComputable) {
+                            const percentComplete = (e.loaded / e.total) * 100;
+                            document.getElementById('progressFill').style.width = percentComplete + '%';
+                            if (percentComplete >= 100) {
+                                document.getElementById('progressText').textContent = 'Sending email...';
+                            } else {
+                                document.getElementById('progressText').textContent = Math.round(percentComplete) + '%';
+                            }
+                        }
+                    });
+                    
+                    xhr.upload.addEventListener('loadstart', function() {
+                        document.getElementById('progressFill').style.width = '0%';
+                        document.getElementById('progressText').textContent = 'Uploading...';
+                    });
+                    
+                    xhr.addEventListener('load', function() {
+                        if (xhr.status === 200) {
+                            const data = JSON.parse(xhr.responseText);
+                            uploadSuccess = data.success;
+                        } else {
+                            uploadSuccess = false;
+                        }
+                        showResult();
+                    });
+                    
+                    xhr.addEventListener('error', function() {
+                        uploadSuccess = false;
+                        showResult();
+                    });
+                    
+                    xhr.addEventListener('abort', function() {
+                        document.getElementById('uploadTitle').textContent = 'Cancelled';
+                        document.getElementById('uploadMessage').textContent = 'Upload was cancelled.';
+                        document.getElementById('progressContainer').style.display = 'none';
                         document.getElementById('uploadCloseBtn').style.display = 'block';
                         document.getElementById('uploadCancelBtn').style.display = 'none';
                         btn.innerHTML = '⤴ Upload';
                         btn.disabled = false;
                     });
+                    
+                    xhr.open('POST', 'send_email.php');
+                    uploadController = xhr;
+                    xhr.send(formData);
                 }, 'image/png');
             }
         }
